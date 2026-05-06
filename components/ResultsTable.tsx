@@ -2,6 +2,7 @@
 
 import { Company } from '@/lib/types';
 import { TRANCHE_LABEL } from '@/lib/constants';
+import { computeScore } from '@/lib/fetch';
 
 type SortMode = 'default' | 'age' | 'ca' | 'score';
 
@@ -69,6 +70,8 @@ function SortableHeader({ label, mode, current, onClick }: { label: string; mode
 }
 
 export default function ResultsTable({ companies, loading, favorites, prospects, onSelect, onToggleFavorite, sortMode, onSortChange }: Props) {
+  const maxCA = Math.max(0, ...companies.map(c => c.finances?.ca ?? 0));
+
   if (!loading && companies.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-slate-400">
@@ -107,6 +110,9 @@ export default function ResultsTable({ companies, loading, favorites, prospects,
               <th className="px-4 py-3 text-left">
                 <SortableHeader label="Dirigeant · Âge" mode="age" current={sortMode} onClick={onSortChange} />
               </th>
+              <th className="px-4 py-3 text-left">
+                <SortableHeader label="Score M&A" mode="score" current={sortMode} onClick={onSortChange} />
+              </th>
               <th className="w-8 px-4 py-3" />
             </tr>
           </thead>
@@ -117,6 +123,7 @@ export default function ResultsTable({ companies, loading, favorites, prospects,
                   const dirigeant = company.dirigeants?.[0];
                   const isFav = favorites.has(company.siren);
                   const prospectStatut = prospects[company.siren];
+                  const score = computeScore(company, maxCA);
 
                   const birthYearStr = (dirigeant?.date_de_naissance || dirigeant?.annee_de_naissance || '').match(/(\d{4})/)?.[1];
                   const age = birthYearStr ? new Date().getFullYear() - parseInt(birthYearStr) : null;
@@ -205,6 +212,21 @@ export default function ResultsTable({ companies, loading, favorites, prospects,
                           </div>
                         ) : (
                           <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+
+                      {/* Score M&A */}
+                      <td className="px-4 py-3.5 whitespace-nowrap">
+                        {score > 0 ? (
+                          <span className={`inline-flex items-center justify-center w-9 h-6 rounded-md text-[11px] font-bold ${
+                            score >= 70 ? 'bg-emerald-50 text-emerald-700' :
+                            score >= 40 ? 'bg-amber-50 text-amber-700' :
+                            'bg-slate-100 text-slate-500'
+                          }`}>
+                            {score}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300 text-sm">—</span>
                         )}
                       </td>
 

@@ -191,6 +191,19 @@ export function ageToDate(age: number): string {
   return `${new Date().getFullYear() - age}-01-01`;
 }
 
+/** Compute M&A score (0–100) for a company given the max CA in the dataset */
+export function computeScore(c: Company, maxCA: number): number {
+  const d = c.dirigeants?.[0];
+  const yrStr = (d?.date_de_naissance || d?.annee_de_naissance || '').match(/(\d{4})/)?.[1];
+  const age = yrStr ? new Date().getFullYear() - parseInt(yrStr) : null;
+
+  const ageScore = age ? Math.max(0, Math.min(100, (age - 40) / 40 * 100)) : 0;
+  const ca = c.finances?.ca ?? null;
+  const caScore = (ca && maxCA > 0) ? Math.min(100, (Math.log(ca + 1) / Math.log(maxCA + 1)) * 100) : 0;
+
+  return Math.round(ageScore * 0.65 + caScore * 0.35);
+}
+
 /** Count of parallel API calls for a given filter config */
 export function countCalls(f: SearchFilters): number {
   return (f.use_ape !== false ? 1 : 0) + (f.keywords?.length ?? 0) + (f.q && !f.keywords?.length ? 1 : 0);
