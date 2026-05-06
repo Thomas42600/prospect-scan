@@ -245,7 +245,7 @@ export default function FiltersPanel({ filters, onChange, totalResults, callCoun
             />
           </div>
 
-          <a href="https://annuaire.experts-comptables.fr" target="_blank" rel="noopener noreferrer"
+          <a href="https://annuaire.experts-comptables.org" target="_blank" rel="noopener noreferrer"
             className="inline-flex items-center gap-1 text-[11px] text-blue-500 hover:text-blue-600 transition">
             <span>↗</span><span>Annuaire OEC officiel</span>
           </a>
@@ -430,7 +430,7 @@ export default function FiltersPanel({ filters, onChange, totalResults, callCoun
           <p className="text-[10.5px] text-slate-400 leading-relaxed">
             APE + mots-clés en <span className="font-semibold text-slate-500">union</span>. CA et âge filtres server-side natifs — gratuits.
           </p>
-          <a href="https://annuaire.experts-comptables.fr" target="_blank" rel="noopener noreferrer"
+          <a href="https://annuaire.experts-comptables.org" target="_blank" rel="noopener noreferrer"
             className="inline-flex items-center gap-1 text-[10.5px] text-blue-500 hover:text-blue-600 transition">
             ↗ Annuaire OEC officiel
           </a>
