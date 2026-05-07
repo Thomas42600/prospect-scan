@@ -83,7 +83,7 @@ function hasNoKnownAge(c: Company): boolean {
 }
 
 function hasNoKnownCa(c: Company): boolean {
-  return c.finances?.ca == null;
+  return c.finances?.ca == null || c.finances.ca === 0;
 }
 
 export async function fetchData(f: SearchFilters): Promise<SearchResult> {

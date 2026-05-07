@@ -62,8 +62,6 @@ export default function Home() {
     return () => clearTimeout(debounceRef.current);
   }, [filters, load]);
 
-  // Reset sort when a new search is triggered
-  useEffect(() => { setSortMode('default'); }, [filters]);
 
   const handleFilterChange = (partial: Partial<SearchFilters>) => {
     setFilters(prev => ({ ...prev, ...partial, page: 1 }));
@@ -113,11 +111,11 @@ export default function Home() {
   const sortedCompanies = useMemo(() => {
     if (sortMode === 'default') {
       return [...displayedCompanies].sort((a, b) => {
-        const scoreA = (a.finances?.ca != null ? 1 : 0) + ((() => {
+        const scoreA = (a.finances?.ca != null && a.finances.ca > 0 ? 1 : 0) + ((() => {
           const d = a.dirigeants?.[0];
           return d && (d.date_de_naissance || d.annee_de_naissance) ? 1 : 0;
         })());
-        const scoreB = (b.finances?.ca != null ? 1 : 0) + ((() => {
+        const scoreB = (b.finances?.ca != null && b.finances.ca > 0 ? 1 : 0) + ((() => {
           const d = b.dirigeants?.[0];
           return d && (d.date_de_naissance || d.annee_de_naissance) ? 1 : 0;
         })());
@@ -134,7 +132,7 @@ export default function Home() {
       return yr ? Y - parseInt(yr) : null;
     };
 
-    const getCA = (c: Company): number | null => c.finances?.ca ?? null;
+    const getCA = (c: Company): number | null => (c.finances?.ca != null && c.finances.ca > 0) ? c.finances.ca : null;
 
     if (sortMode === 'age') {
       return [...displayedCompanies].sort((a, b) => {
