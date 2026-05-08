@@ -48,14 +48,52 @@ function ExternalLink({ href, label, desc }: { href: string; label: string; desc
   );
 }
 
+type RneDirigeant = { nom: string; prenom: string; qualite: string; dateNaissance: string; annee: number | null };
+
 export default function CompanyDrawer({ company, isFavorite, onToggleFavorite, onClose, onProspectChange }: Props) {
   const [notes, setNotes] = useState('');
   const [statut, setStatut] = useState('new');
+  const [rneData, setRneData] = useState<RneDirigeant[] | null>(null);
+  const [rneLoading, setRneLoading] = useState(false);
+  const [rneError, setRneError] = useState<string | null>(null);
 
   useEffect(() => {
     setNotes(localStorage.getItem(`notes_${company.siren}`) || '');
     setStatut(localStorage.getItem(`statut_${company.siren}`) || 'new');
+    // Load cached RNE data
+    try {
+      const cached = localStorage.getItem(`rne_${company.siren}`);
+      if (cached) setRneData(JSON.parse(cached));
+    } catch { /* ignore */ }
+    setRneError(null);
   }, [company.siren]);
+
+  const enrichFromRne = async () => {
+    setRneLoading(true);
+    setRneError(null);
+    try {
+      const res = await fetch(`/api/enrich?siren=${company.siren}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
+      setRneData(data.dirigeants || []);
+      localStorage.setItem(`rne_${company.siren}`, JSON.stringify(data.dirigeants || []));
+    } catch (e) {
+      setRneError(e instanceof Error ? e.message : 'Erreur inconnue');
+    } finally {
+      setRneLoading(false);
+    }
+  };
+
+  // Merge: for each original dirigeant, find a matching RNE entry by name
+  const normalize = (s: string) => s.toLowerCase().replace(/[^a-z]/g, '');
+  const findRneMatch = (nom: string, prenom: string): RneDirigeant | null => {
+    if (!rneData) return null;
+    const target = normalize(nom + prenom);
+    return rneData.find(r => {
+      const rKey = normalize(r.nom + r.prenom);
+      return rKey && target && (rKey.includes(normalize(nom)) || normalize(nom).includes(normalize(r.nom)));
+    }) || null;
+  };
 
   const saveNotes = (val: string) => {
     setNotes(val);
@@ -171,26 +209,56 @@ export default function CompanyDrawer({ company, isFavorite, onToggleFavorite, o
             {/* Dirigeants */}
             {company.dirigeants && company.dirigeants.length > 0 && (
               <div>
-                <p className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider mb-3">
-                  Dirigeants <span className="text-slate-300 font-normal">({company.dirigeants.length})</span>
-                </p>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider">
+                    Dirigeants <span className="text-slate-300 font-normal">({company.dirigeants.length})</span>
+                  </p>
+                  <button
+                    onClick={enrichFromRne}
+                    disabled={rneLoading}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-lg border transition ${
+                      rneData
+                        ? 'border-emerald-200 text-emerald-600 bg-emerald-50'
+                        : 'border-slate-200 text-slate-500 hover:border-blue-300 hover:text-blue-600 bg-white'
+                    } disabled:opacity-50`}
+                  >
+                    {rneLoading ? (
+                      <><span className="w-3 h-3 border border-blue-400 border-t-transparent rounded-full animate-spin" />Chargement…</>
+                    ) : rneData ? (
+                      <>✓ Enrichi via INPI RNE</>
+                    ) : (
+                      <>↗ Enrichir via INPI RNE</>
+                    )}
+                  </button>
+                </div>
+
+                {rneError && (
+                  <p className="text-[11px] text-red-500 mb-2 p-2 bg-red-50 rounded-lg">{rneError}</p>
+                )}
+
                 <div className="space-y-2">
                   {company.dirigeants.map((d, i) => {
                     const name = d.denomination || [d.prenoms, d.nom].filter(Boolean).join(' ');
                     const initials = name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
-                    const birthYear = (d.date_de_naissance || d.annee_de_naissance || '').match(/(\d{4})/)?.[1];
+
+                    // Birth year: from original data OR from RNE enrichment
+                    const originalBirthYear = (d.date_de_naissance || d.annee_de_naissance || '').match(/(\d{4})/)?.[1];
+                    const rneMatch = !originalBirthYear ? findRneMatch(d.nom || '', d.prenoms || '') : null;
+                    const birthYear = originalBirthYear || (rneMatch?.annee ? String(rneMatch.annee) : null);
+                    const isRneEnriched = !originalBirthYear && !!rneMatch;
+
                     const age = birthYear ? new Date().getFullYear() - parseInt(birthYear) : null;
                     const ageColor = age
                       ? age >= 65 ? 'text-red-500' : age >= 60 ? 'text-amber-500' : age >= 50 ? 'text-amber-400' : 'text-slate-400'
                       : '';
                     return (
-                      <div key={i} className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg">
+                      <div key={i} className={`flex items-center gap-3 p-3 bg-white border rounded-lg ${isRneEnriched ? 'border-emerald-200' : 'border-slate-200'}`}>
                         <div className="w-9 h-9 flex-shrink-0 bg-slate-100 text-slate-600 rounded-full flex items-center justify-center text-xs font-bold">
                           {initials || '?'}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold text-slate-800">{name || '—'}</p>
-                          <div className="flex items-center gap-2 mt-0.5">
+                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                             <span className="text-[11px] text-slate-400">{d.qualite || d.type_dirigeant || d.type}</span>
                             {age && (
                               <span className={`text-[11px] font-bold ${ageColor}`}>
@@ -198,7 +266,43 @@ export default function CompanyDrawer({ company, isFavorite, onToggleFavorite, o
                               </span>
                             )}
                           </div>
-                          {birthYear && <p className="text-[11px] text-slate-400">né·e en {birthYear}</p>}
+                          {birthYear && (
+                            <p className="text-[11px] mt-0.5 flex items-center gap-1">
+                              <span className="text-slate-400">né·e en {birthYear}</span>
+                              {isRneEnriched && <span className="text-emerald-600 font-medium">· via INPI RNE</span>}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* RNE-only dirigeants (found in RNE but not in original list) */}
+                  {rneData && rneData.filter(r => {
+                    return !company.dirigeants.some(d =>
+                      normalize(d.nom || '').includes(normalize(r.nom)) || normalize(r.nom).includes(normalize(d.nom || ''))
+                    );
+                  }).map((r, i) => {
+                    const age = r.annee ? new Date().getFullYear() - r.annee : null;
+                    const ageColor = age
+                      ? age >= 65 ? 'text-red-500' : age >= 60 ? 'text-amber-500' : age >= 50 ? 'text-amber-400' : 'text-slate-400'
+                      : '';
+                    return (
+                      <div key={`rne-${i}`} className="flex items-center gap-3 p-3 bg-white border border-emerald-200 rounded-lg">
+                        <div className="w-9 h-9 flex-shrink-0 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center text-xs font-bold">
+                          {(r.nom[0] || '') + (r.prenom[0] || '')}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-slate-800">{[r.prenom, r.nom].filter(Boolean).join(' ')}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[11px] text-slate-400">{r.qualite}</span>
+                            {age && <span className={`text-[11px] font-bold ${ageColor}`}>· {age} ans</span>}
+                          </div>
+                          {r.annee && (
+                            <p className="text-[11px] text-slate-400 mt-0.5">
+                              né·e en {r.annee} <span className="text-emerald-600 font-medium">· via INPI RNE</span>
+                            </p>
+                          )}
                         </div>
                       </div>
                     );

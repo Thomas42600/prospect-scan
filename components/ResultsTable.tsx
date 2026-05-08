@@ -15,6 +15,8 @@ interface Props {
   onToggleFavorite: (siren: string) => void;
   sortMode?: SortMode;
   onSortChange?: (mode: SortMode) => void;
+  enrichedAges?: Record<string, number | null>;
+  enrichingCount?: number;
 }
 
 const STATUT_COLORS: Record<string, string> = {
@@ -69,10 +71,10 @@ function SortableHeader({ label, mode, current, onClick }: { label: string; mode
   );
 }
 
-export default function ResultsTable({ companies, loading, favorites, prospects, onSelect, onToggleFavorite, sortMode, onSortChange }: Props) {
+export default function ResultsTable({ companies, loading, favorites, prospects, onSelect, onToggleFavorite, sortMode, onSortChange, enrichedAges = {}, enrichingCount = 0 }: Props) {
   const maxCA = Math.max(0, ...companies.map(c => c.finances?.ca ?? 0));
 
-  if (!loading && companies.length === 0) {
+  if (!loading && companies.length === 0 && enrichingCount === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-slate-400">
         <svg className="w-10 h-10 mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -116,6 +118,18 @@ export default function ResultsTable({ companies, loading, favorites, prospects,
               <th className="w-8 px-4 py-3" />
             </tr>
           </thead>
+          {enrichingCount > 0 && (
+            <thead>
+              <tr>
+                <td colSpan={9} className="px-4 py-1.5 bg-emerald-50 border-b border-emerald-100">
+                  <span className="text-[11px] text-emerald-600 flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 border border-emerald-500 border-t-transparent rounded-full animate-spin inline-block" />
+                    Enrichissement INPI RNE en cours… ({enrichingCount} restants)
+                  </span>
+                </td>
+              </tr>
+            </thead>
+          )}
           <tbody className="divide-y divide-slate-100">
             {loading
               ? Array.from({ length: 10 }).map((_, i) => <SkeletonRow key={i} />)
@@ -126,7 +140,10 @@ export default function ResultsTable({ companies, loading, favorites, prospects,
                   const score = computeScore(company, maxCA);
 
                   const birthYearStr = (dirigeant?.date_de_naissance || dirigeant?.annee_de_naissance || '').match(/(\d{4})/)?.[1];
-                  const age = birthYearStr ? new Date().getFullYear() - parseInt(birthYearStr) : null;
+                  const enrichedYear = !birthYearStr ? (enrichedAges[company.siren] ?? null) : null;
+                  const effectiveBirthYear = birthYearStr || (enrichedYear ? String(enrichedYear) : null);
+                  const age = effectiveBirthYear ? new Date().getFullYear() - parseInt(effectiveBirthYear) : null;
+                  const isRneAge = !birthYearStr && !!enrichedYear;
 
                   return (
                     <tr
@@ -205,7 +222,7 @@ export default function ResultsTable({ companies, loading, favorites, prospects,
                                 <span className={`text-[11px] font-semibold ${
                                   age >= 65 ? 'text-red-500' : age >= 60 ? 'text-amber-500' : age >= 50 ? 'text-amber-400' : 'text-slate-400'
                                 }`}>
-                                  · {age} ans
+                                  · {age} ans{isRneAge && <span className="ml-1 text-[10px] text-emerald-500 font-normal">RNE</span>}
                                 </span>
                               )}
                             </div>

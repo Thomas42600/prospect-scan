@@ -38,7 +38,12 @@ export default function Home() {
   const [allResults, setAllResults] = useState<Company[] | null>(null);
   const [loadingAll, setLoadingAll] = useState(false);
   const [clientPage, setClientPage] = useState(1);
-  const allFetchRef = useRef<boolean>(false); // abort flag
+  const allFetchRef = useRef<boolean>(false);
+
+  // RNE enrichment: siren → birth year (null = checked, not found)
+  const [enrichedAges, setEnrichedAges] = useState<Record<string, number | null>>({});
+  const [enrichingCount, setEnrichingCount] = useState(0);
+  const enrichQueueRef = useRef<Set<string>>(new Set());
 
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
@@ -96,9 +101,65 @@ export default function Home() {
       if (!allFetchRef.current) setLoadingAll(false);
     });
 
-    return () => { allFetchRef.current = true; }; // abort on cleanup
+    return () => { allFetchRef.current = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sortMode, results]);
+
+  // Auto-enrich companies without birth date via INPI RNE (background, batches of 6)
+  useEffect(() => {
+    const companies = allResults ?? results?.results ?? [];
+    const toEnrich = companies.filter(c => {
+      const d = c.dirigeants?.[0];
+      const hasDob = d && (d.date_de_naissance || d.annee_de_naissance);
+      return !hasDob && !enrichQueueRef.current.has(c.siren) && !(c.siren in enrichedAges);
+    });
+
+    if (toEnrich.length === 0) return;
+
+    // Mark as queued to avoid duplicates
+    toEnrich.forEach(c => enrichQueueRef.current.add(c.siren));
+    setEnrichingCount(n => n + toEnrich.length);
+
+    const BATCH = 6;
+    let i = 0;
+
+    const runBatch = async () => {
+      const batch = toEnrich.slice(i, i + BATCH);
+      i += BATCH;
+      if (batch.length === 0) return;
+
+      await Promise.all(batch.map(async c => {
+        // Check localStorage cache first
+        try {
+          const cached = localStorage.getItem(`rne_${c.siren}`);
+          if (cached) {
+            const data = JSON.parse(cached) as Array<{ annee: number | null }>;
+            const year = data[0]?.annee ?? null;
+            setEnrichedAges(prev => ({ ...prev, [c.siren]: year }));
+            setEnrichingCount(n => Math.max(0, n - 1));
+            return;
+          }
+        } catch { /* ignore */ }
+
+        try {
+          const res = await fetch(`/api/enrich?siren=${c.siren}`);
+          if (!res.ok) { setEnrichingCount(n => Math.max(0, n - 1)); return; }
+          const data = await res.json();
+          const dirs = data.dirigeants as Array<{ annee: number | null }> || [];
+          const year = dirs[0]?.annee ?? null;
+          localStorage.setItem(`rne_${c.siren}`, JSON.stringify(dirs));
+          setEnrichedAges(prev => ({ ...prev, [c.siren]: year }));
+        } catch { /* ignore */ } finally {
+          setEnrichingCount(n => Math.max(0, n - 1));
+        }
+      }));
+
+      if (i < toEnrich.length) await runBatch();
+    };
+
+    runBatch();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allResults, results]);
 
   const handleFilterChange = (partial: Partial<SearchFilters>) => {
     setFilters(prev => ({ ...prev, ...partial, page: 1 }));
@@ -149,9 +210,12 @@ export default function Home() {
 
     const getAge = (c: Company): number | null => {
       const d = c.dirigeants?.[0];
-      if (!d) return null;
-      const yr = (d.date_de_naissance || d.annee_de_naissance || '').match(/(\d{4})/)?.[1];
-      return yr ? Y - parseInt(yr) : null;
+      if (d) {
+        const yr = (d.date_de_naissance || d.annee_de_naissance || '').match(/(\d{4})/)?.[1];
+        if (yr) return Y - parseInt(yr);
+      }
+      const enrichedYear = enrichedAges[c.siren];
+      return enrichedYear ? Y - enrichedYear : null;
     };
 
     const getCA = (c: Company): number | null =>
@@ -360,6 +424,8 @@ export default function Home() {
             onToggleFavorite={toggleFavorite}
             sortMode={sortMode}
             onSortChange={setSortMode}
+            enrichedAges={enrichedAges}
+            enrichingCount={enrichingCount}
           />
         </div>
 
